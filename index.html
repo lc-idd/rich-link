@@ -134,9 +134,10 @@
     throw lastErr || new Error('All proxies failed');
   }
 
-  function loadImage(url) {
+  function loadImage(url, crossOrigin) {
     return new Promise((resolve, reject) => {
       const img = new Image();
+      if (crossOrigin) img.crossOrigin = crossOrigin;
       img.onload = () => resolve(img);
       img.onerror = () => reject(new Error('image load failed'));
       img.src = url;
@@ -181,28 +182,41 @@
     return [r, g, b];
   }
 
-  async function extractDominantColor(imageUrl) {
-    // Route the image through a CORS proxy (try all in chain) so we can read pixels without canvas tainting.
+  // Get a canvas-readable image for a remote URL: prefer direct CORS (works for i.ytimg.com,
+  // S3, Cloudinary, jsDelivr, etc.), fall back to proxy chain for non-CORS hosts.
+  async function loadImageForCanvas(url) {
+    try {
+      const img = await loadImage(url, 'anonymous');
+      return { img, cleanup: () => {} };
+    } catch (e) { /* fall through */ }
     let blob, lastErr;
     for (const make of PROXIES) {
       try {
-        const r = await fetch(make(imageUrl));
-        if (r.ok) {
-          const ct = r.headers.get('content-type') || '';
-          if (!ct.startsWith('image/') && !ct.startsWith('application/octet-stream')) {
-            lastErr = new Error(`non-image content-type: ${ct}`);
-            continue;
-          }
-          blob = await r.blob();
-          break;
+        const r = await fetch(make(url));
+        if (!r.ok) { lastErr = new Error(`HTTP ${r.status}`); continue; }
+        const ct = r.headers.get('content-type') || '';
+        if (!ct.startsWith('image/') && !ct.startsWith('application/octet-stream')) {
+          lastErr = new Error(`non-image content-type from proxy: ${ct}`);
+          continue;
         }
-        lastErr = new Error(`HTTP ${r.status}`);
+        blob = await r.blob();
+        break;
       } catch (e) { lastErr = e; }
     }
-    if (!blob) throw lastErr || new Error('all image proxies failed');
+    if (!blob) throw lastErr || new Error('all image sources failed');
     const objUrl = URL.createObjectURL(blob);
     try {
       const img = await loadImage(objUrl);
+      return { img, cleanup: () => URL.revokeObjectURL(objUrl) };
+    } catch (e) {
+      URL.revokeObjectURL(objUrl);
+      throw e;
+    }
+  }
+
+  async function extractDominantColor(imageUrl) {
+    const { img, cleanup } = await loadImageForCanvas(imageUrl);
+    try {
       const w = 50;
       const h = Math.max(1, Math.round(50 * (img.naturalHeight || 1) / (img.naturalWidth || 1)));
       const canvas = document.createElement('canvas');
@@ -213,7 +227,7 @@
       const [r2, g2, b2] = darkenForWhiteText(dominantColor(data));
       return '#' + [r2, g2, b2].map(v => v.toString(16).padStart(2,'0')).join('');
     } finally {
-      URL.revokeObjectURL(objUrl);
+      cleanup();
     }
   }
 
