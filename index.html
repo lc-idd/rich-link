@@ -15,6 +15,7 @@
   label { display: block; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase; color: #999; margin-bottom: 6px; font-family: monospace; }
   input[type=text] { width: 100%; border: 1px solid #ddd; border-radius: 8px; padding: 10px 12px; font-size: 14px; font-family: inherit; background: #fafaf8; color: #1a1a1a; outline: none; transition: border-color 0.15s; }
   input[type=text]:focus { border-color: #aaa; background: #fff; }
+  input[type=color] { width: 80px; height: 36px; padding: 2px; border: 1px solid #ddd; border-radius: 8px; background: #fff; cursor: pointer; }
   .url-row { display: flex; gap: 8px; margin-bottom: 20px; }
   .url-row input { flex: 1; }
   .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
@@ -25,26 +26,26 @@
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   .preview-label { font-size: 12px; font-family: monospace; letter-spacing: 0.5px; text-transform: uppercase; color: #999; margin-bottom: 10px; }
   #previewWrap { display: none; }
-  .rich-card { border: 1px solid #d1cfc8; border-radius: 14px; overflow: hidden; max-width: 360px; background: #fff; margin-bottom: 24px; }
-  .rich-card-img { width: 100%; height: 190px; object-fit: cover; display: block; }
-  .rich-card-img-placeholder { width: 100%; height: 190px; background: #e8e5de; display: flex; align-items: center; justify-content: center; font-size: 40px; }
-  .rich-card-body { padding: 10px 12px 12px; font-family: Arial, sans-serif; }
-  .rich-card-domain { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; }
-  .rich-card-title { font-size: 14px; font-weight: 600; color: #1a1a1a; line-height: 1.3; }
+  .rich-card { width: 300px; font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", Helvetica, Arial, sans-serif; margin-bottom: 24px; }
+  .rich-card-img { width: 300px; height: 168px; object-fit: cover; display: block; border: 0; }
+  .rich-card-img-placeholder { width: 300px; height: 168px; background: #e8e5de; display: flex; align-items: center; justify-content: center; font-size: 40px; }
+  .rich-card-body { padding: 8px 16px; }
+  .rich-card-title { font-size: 12px; font-weight: 500; color: #fff; line-height: 1.3; word-wrap: break-word; overflow: hidden; }
+  .rich-card-domain { font-size: 11px; font-weight: 400; color: rgba(255,255,255,0.55); line-height: 1.3; margin-top: 2px; }
   .instructions { background: #fff; border: 1px solid #e0ddd6; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; }
   .step { display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; }
   .step-num { font-size: 11px; font-family: monospace; background: #1a1a1a; color: #fff; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; top: 1px; }
   .step p { font-size: 13px; color: #555; line-height: 1.7; font-family: Arial, sans-serif; }
   .step strong { color: #1a1a1a; }
   .spinner { display: none; font-size: 13px; color: #888; font-family: monospace; margin-top: 8px; }
-  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-family: monospace; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 999; white-space: nowrap; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-family: monospace; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 999; max-width: 90vw; text-align: center; }
   .toast.show { opacity: 1; }
 </style>
 </head>
 <body>
 <div class="container">
   <h1>Gmail rich link generator</h1>
-  <p class="sub">paste URL to auto-fill &rarr; edit &rarr; download &rarr; open &rarr; copy &rarr; paste into Gmail</p>
+  <p class="sub">paste URL &rarr; fetch &rarr; preview &rarr; copy &rarr; paste into Gmail</p>
 
   <div class="form-card">
     <div class="field">
@@ -67,6 +68,10 @@
       <label>Domain label</label>
       <input type="text" id="fDomain" placeholder="example.com" />
     </div>
+    <div class="field">
+      <label>Caption color</label>
+      <input type="color" id="fColor" value="#0E4784" />
+    </div>
     <div class="btn-row">
       <button class="primary" onclick="preview()">Preview card</button>
       <button onclick="clearForm()">Clear</button>
@@ -77,9 +82,9 @@
     <p class="preview-label">Preview</p>
     <div class="rich-card">
       <div id="cardImgWrap"></div>
-      <div class="rich-card-body">
-        <div class="rich-card-domain" id="prevDomain"></div>
+      <div class="rich-card-body" id="cardBody">
         <div class="rich-card-title" id="prevTitle"></div>
+        <div class="rich-card-domain" id="prevDomain"></div>
       </div>
     </div>
     <div class="instructions">
@@ -107,7 +112,7 @@
     return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
   function tryHostname(url) {
-    try { return new URL(url.startsWith('http') ? url : 'https://'+url).hostname; } catch { return ''; }
+    try { return new URL(url.startsWith('http') ? url : 'https://'+url).hostname.replace(/^www\./, ''); } catch { return ''; }
   }
   function normalizeUrl(url) {
     return url.startsWith('http') ? url : 'https://' + url;
@@ -131,16 +136,57 @@
 
   function extractMeta(html, sourceUrl) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
-    const get = (prop) =>
-      doc.querySelector(`meta[property="${prop}"]`)?.getAttribute('content') ||
-      doc.querySelector(`meta[name="${prop}"]`)?.getAttribute('content') || '';
-    const title = get('og:title') || (doc.querySelector('title')?.textContent || '').trim();
-    const description = get('og:description') || get('description');
-    const image = absolutize(get('og:image'), sourceUrl);
-    const siteName = get('og:site_name');
+    const m = (q) => (doc.querySelector(q)?.getAttribute('content') || '').trim();
+    const a = (q, attr) => (doc.querySelector(q)?.getAttribute(attr) || '').trim();
+
+    const title =
+      m('meta[property="og:title"]') ||
+      m('meta[name="twitter:title"]') ||
+      m('meta[name="title"]') ||
+      (doc.querySelector('title')?.textContent || '').trim() ||
+      (doc.querySelector('h1')?.textContent || '').trim();
+
+    const description =
+      m('meta[property="og:description"]') ||
+      m('meta[name="twitter:description"]') ||
+      m('meta[name="description"]') ||
+      m('meta[itemprop="description"]');
+
+    let image =
+      m('meta[property="og:image"]') ||
+      m('meta[property="og:image:secure_url"]') ||
+      m('meta[property="og:image:url"]') ||
+      m('meta[name="twitter:image"]') ||
+      m('meta[name="twitter:image:src"]') ||
+      m('meta[itemprop="image"]') ||
+      a('link[rel="image_src"]', 'href');
+
+    if (!image) {
+      // Last resort: first non-tiny <img> in the body
+      for (const img of doc.querySelectorAll('img')) {
+        const src = img.getAttribute('src') || img.getAttribute('data-src') || img.getAttribute('data-original') || '';
+        if (!src || src.startsWith('data:')) continue;
+        const w = parseInt(img.getAttribute('width')) || 0;
+        const h = parseInt(img.getAttribute('height')) || 0;
+        if ((w && w < 100) || (h && h < 100)) continue;
+        image = src;
+        break;
+      }
+    }
+    image = absolutize(image, sourceUrl);
+
+    const siteName =
+      m('meta[property="og:site_name"]') ||
+      m('meta[name="application-name"]');
+
+    const themeColor =
+      m('meta[name="theme-color"]') ||
+      m('meta[name="msapplication-TileColor"]');
+
     let domain = '';
-    try { domain = new URL(sourceUrl).hostname; } catch {}
-    return { title, description, image, siteName, domain };
+    try { domain = new URL(sourceUrl).hostname.replace(/^www\./, ''); } catch {}
+
+    return { title, description, image, siteName, domain, themeColor };
   }
 
   async function fetchMeta() {
@@ -155,7 +201,16 @@
       document.getElementById('fTitle').value = data.title || '';
       document.getElementById('fImage').value = data.image || '';
       document.getElementById('fDomain').value = data.siteName || data.domain || tryHostname(url);
-      toast('Metadata fetched - edit if needed, then preview.');
+      if (data.themeColor && /^#[0-9a-fA-F]{6}$/.test(data.themeColor)) {
+        document.getElementById('fColor').value = data.themeColor;
+      }
+      if (!data.title && !data.image) {
+        toast('Got the page but no metadata - the site may block proxies. Paste fields manually.');
+      } else if (!data.image) {
+        toast('No image found - paste a thumbnail URL manually, then preview.');
+      } else {
+        toast('Fetched - edit if needed, then preview.');
+      }
     } catch(e) {
       toast('Could not fetch metadata: ' + e.message);
     } finally {
@@ -169,32 +224,44 @@
     const image = document.getElementById('fImage').value.trim();
     const url = document.getElementById('fUrl').value.trim();
     const domain = document.getElementById('fDomain').value.trim() || tryHostname(url);
+    const color = document.getElementById('fColor').value || '#0E4784';
     if (!title) { toast('Please enter at least a title.'); return; }
     const imgWrap = document.getElementById('cardImgWrap');
     imgWrap.innerHTML = image
       ? `<img class="rich-card-img" src="${esc(image)}" alt="" onerror="this.outerHTML='<div class=rich-card-img-placeholder>&#128279;</div>'" />`
       : `<div class="rich-card-img-placeholder">&#128279;</div>`;
     document.getElementById('prevTitle').textContent = title;
-    document.getElementById('prevDomain').textContent = domain.toUpperCase();
+    document.getElementById('prevDomain').textContent = domain;
+    document.getElementById('cardBody').style.backgroundColor = color;
     document.getElementById('previewWrap').style.display = 'block';
   }
 
+  // Email-safe table layout matching iOS Messages rich-link style.
   function buildCardInner() {
     const url = document.getElementById('fUrl').value.trim();
     const title = esc(document.getElementById('fTitle').value.trim());
     const image = document.getElementById('fImage').value.trim();
-    const domain = esc((document.getElementById('fDomain').value.trim() || tryHostname(url)).toUpperCase());
-    const href = normalizeUrl(url);
+    const domain = esc(document.getElementById('fDomain').value.trim() || tryHostname(url));
+    const color = document.getElementById('fColor').value || '#0E4784';
+    const href = esc(normalizeUrl(url));
     const imgHtml = image
-      ? `<img src="${esc(image)}" alt="" style="display:block;width:100%;height:190px;object-fit:cover;" />`
-      : `<div style="width:100%;height:190px;background:#e8e5de;display:flex;align-items:center;justify-content:center;font-size:40px;">&#128279;</div>`;
-    return `<a href="${esc(href)}" style="display:inline-block;text-decoration:none;border:1px solid #d1cfc8;border-radius:14px;overflow:hidden;max-width:360px;background:#fff;">
-  ${imgHtml}
-  <div style="padding:10px 12px 12px;">
-    <div style="font-size:11px;color:#999;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px;font-family:Arial,sans-serif;">${domain}</div>
-    <div style="font-size:14px;font-weight:600;color:#1a1a1a;line-height:1.3;font-family:Arial,sans-serif;">${title}</div>
-  </div>
-</a>`;
+      ? `<img src="${esc(image)}" width="300" height="168" alt="" style="display:block;width:300px;height:168px;object-fit:cover;border:0;" />`
+      : `<div style="width:300px;height:168px;background:#e8e5de;font-size:40px;text-align:center;line-height:168px;">&#128279;</div>`;
+    return `<table cellpadding="0" cellspacing="0" border="0" width="300" style="width:300px;font-family:-apple-system,Helvetica,Arial,sans-serif;border-collapse:collapse;table-layout:fixed;">
+<tbody>
+<tr><td align="center" style="padding:0;line-height:0;">
+<a href="${href}" style="text-decoration:none;display:block;">${imgHtml}</a>
+</td></tr>
+<tr><td bgcolor="${color}" style="padding:8px 16px;background-color:${color};">
+<div style="font-size:12px;font-weight:500;line-height:1.3;word-wrap:break-word;overflow:hidden;text-overflow:ellipsis;text-align:left;">
+<a href="${href}" style="text-decoration:none;"><font color="#FFFFFF" style="color:rgba(255,255,255,0.85);">${title}</font></a>
+</div>
+<div style="font-size:11px;font-weight:400;line-height:1.3;margin-top:2px;word-wrap:break-word;overflow:hidden;text-overflow:ellipsis;text-align:left;">
+<a href="${href}" style="text-decoration:none;"><font color="#FFFFFF" style="color:rgba(255,255,255,0.55);">${domain}</font></a>
+</div>
+</td></tr>
+</tbody>
+</table>`;
   }
 
   async function copyCard() {
@@ -222,7 +289,7 @@
     const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><title>Card</title>
-<style>body{margin:0;padding:20px;background:#fff;font-family:Arial,sans-serif;}</style>
+<style>body{margin:0;padding:20px;background:#fff;}</style>
 </head>
 <body>
 ${buildCardInner()}
@@ -237,6 +304,7 @@ ${buildCardInner()}
 
   function clearForm() {
     ['fUrl','fTitle','fImage','fDomain'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('fColor').value = '#0E4784';
     document.getElementById('previewWrap').style.display = 'none';
   }
 
@@ -244,7 +312,7 @@ ${buildCardInner()}
     const t = document.getElementById('toast');
     t.textContent = msg;
     t.classList.add('show');
-    setTimeout(() => t.classList.remove('show'), 3500);
+    setTimeout(() => t.classList.remove('show'), 4000);
   }
 </script>
 </body>
