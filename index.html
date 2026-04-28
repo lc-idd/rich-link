@@ -143,22 +143,26 @@
     });
   }
 
-  // Most-common color in 4-bits-per-channel quantized space, weighted toward saturated pixels.
+  // Most-common color in 4-bits-per-channel quantized space.
+  // Skip near-white/near-black (likely background or text) and weight saturated pixels heavily.
   function dominantColor(pixels) {
     const counts = new Map();
     for (let i = 0; i < pixels.length; i += 4) {
       if (pixels[i+3] < 200) continue;
       const r = pixels[i], g = pixels[i+1], b = pixels[i+2];
+      if (r > 240 && g > 240 && b > 240) continue; // near-white background
+      if (r < 25 && g < 25 && b < 25) continue;    // near-black text/shadow
       const max = Math.max(r,g,b), min = Math.min(r,g,b);
       const sat = max ? (max - min) / max : 0;
-      const weight = 1 + Math.round(sat * 4); // saturated pixels count more
+      const weight = 1 + Math.round(sat * sat * 8); // square saturation so punchy colors dominate
       const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
       counts.set(key, (counts.get(key) || 0) + weight);
     }
-    let bestKey = 0, bestCount = 0;
+    let bestKey = -1, bestCount = 0;
     for (const [k, c] of counts) {
       if (c > bestCount) { bestKey = k; bestCount = c; }
     }
+    if (bestKey === -1) return [80, 80, 80]; // image was all near-white/black
     return [
       ((bestKey >> 8) & 0xf) << 4 | 0x8,
       ((bestKey >> 4) & 0xf) << 4 | 0x8,
@@ -178,11 +182,24 @@
   }
 
   async function extractDominantColor(imageUrl) {
-    // Route the image through a CORS proxy so we can read pixels without canvas tainting.
-    const proxied = `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`;
-    const r = await fetch(proxied);
-    if (!r.ok) throw new Error(`image proxy HTTP ${r.status}`);
-    const blob = await r.blob();
+    // Route the image through a CORS proxy (try all in chain) so we can read pixels without canvas tainting.
+    let blob, lastErr;
+    for (const make of PROXIES) {
+      try {
+        const r = await fetch(make(imageUrl));
+        if (r.ok) {
+          const ct = r.headers.get('content-type') || '';
+          if (!ct.startsWith('image/') && !ct.startsWith('application/octet-stream')) {
+            lastErr = new Error(`non-image content-type: ${ct}`);
+            continue;
+          }
+          blob = await r.blob();
+          break;
+        }
+        lastErr = new Error(`HTTP ${r.status}`);
+      } catch (e) { lastErr = e; }
+    }
+    if (!blob) throw lastErr || new Error('all image proxies failed');
     const objUrl = URL.createObjectURL(blob);
     try {
       const img = await loadImage(objUrl);
@@ -278,7 +295,9 @@
             document.getElementById('fColor').value = c;
             colorSource = 'image';
           }
-        } catch {}
+        } catch (e) {
+          console.warn('Brand-color extraction failed; using default:', e?.message || e);
+        }
       }
       if (!data.title && !data.image) {
         toast('Got the page but no metadata - the site may block proxies. Paste fields manually.');
