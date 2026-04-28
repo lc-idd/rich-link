@@ -134,6 +134,72 @@
     throw lastErr || new Error('All proxies failed');
   }
 
+  function loadImage(url) {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve(img);
+      img.onerror = () => reject(new Error('image load failed'));
+      img.src = url;
+    });
+  }
+
+  // Most-common color in 4-bits-per-channel quantized space, weighted toward saturated pixels.
+  function dominantColor(pixels) {
+    const counts = new Map();
+    for (let i = 0; i < pixels.length; i += 4) {
+      if (pixels[i+3] < 200) continue;
+      const r = pixels[i], g = pixels[i+1], b = pixels[i+2];
+      const max = Math.max(r,g,b), min = Math.min(r,g,b);
+      const sat = max ? (max - min) / max : 0;
+      const weight = 1 + Math.round(sat * 4); // saturated pixels count more
+      const key = ((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4);
+      counts.set(key, (counts.get(key) || 0) + weight);
+    }
+    let bestKey = 0, bestCount = 0;
+    for (const [k, c] of counts) {
+      if (c > bestCount) { bestKey = k; bestCount = c; }
+    }
+    return [
+      ((bestKey >> 8) & 0xf) << 4 | 0x8,
+      ((bestKey >> 4) & 0xf) << 4 | 0x8,
+      (bestKey & 0xf) << 4 | 0x8,
+    ];
+  }
+
+  function darkenForWhiteText(rgb) {
+    let [r, g, b] = rgb;
+    const lum = 0.299*r + 0.587*g + 0.114*b;
+    const target = 60;
+    if (lum > target) {
+      const f = target / lum;
+      r = Math.round(r * f); g = Math.round(g * f); b = Math.round(b * f);
+    }
+    return [r, g, b];
+  }
+
+  async function extractDominantColor(imageUrl) {
+    // Route the image through a CORS proxy so we can read pixels without canvas tainting.
+    const proxied = `https://api.allorigins.win/raw?url=${encodeURIComponent(imageUrl)}`;
+    const r = await fetch(proxied);
+    if (!r.ok) throw new Error(`image proxy HTTP ${r.status}`);
+    const blob = await r.blob();
+    const objUrl = URL.createObjectURL(blob);
+    try {
+      const img = await loadImage(objUrl);
+      const w = 50;
+      const h = Math.max(1, Math.round(50 * (img.naturalHeight || 1) / (img.naturalWidth || 1)));
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, w, h);
+      const data = ctx.getImageData(0, 0, w, h).data;
+      const [r2, g2, b2] = darkenForWhiteText(dominantColor(data));
+      return '#' + [r2, g2, b2].map(v => v.toString(16).padStart(2,'0')).join('');
+    } finally {
+      URL.revokeObjectURL(objUrl);
+    }
+  }
+
   function extractMeta(html, sourceUrl) {
     const doc = new DOMParser().parseFromString(html, 'text/html');
     const m = (q) => (doc.querySelector(q)?.getAttribute('content') || '').trim();
@@ -201,13 +267,25 @@
       document.getElementById('fTitle').value = data.title || '';
       document.getElementById('fImage').value = data.image || '';
       document.getElementById('fDomain').value = data.siteName || data.domain || tryHostname(url);
+      let colorSource = '';
       if (data.themeColor && /^#[0-9a-fA-F]{6}$/.test(data.themeColor)) {
         document.getElementById('fColor').value = data.themeColor;
+        colorSource = 'theme-color';
+      } else if (data.image) {
+        try {
+          const c = await extractDominantColor(data.image);
+          if (c) {
+            document.getElementById('fColor').value = c;
+            colorSource = 'image';
+          }
+        } catch {}
       }
       if (!data.title && !data.image) {
         toast('Got the page but no metadata - the site may block proxies. Paste fields manually.');
       } else if (!data.image) {
         toast('No image found - paste a thumbnail URL manually, then preview.');
+      } else if (colorSource === 'image') {
+        toast('Fetched + brand color from image. Edit if needed, then preview.');
       } else {
         toast('Fetched - edit if needed, then preview.');
       }
