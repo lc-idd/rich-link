@@ -83,13 +83,12 @@
       </div>
     </div>
     <div class="instructions">
-      <div class="step"><div class="step-num">1</div><p><strong>Download the card</strong> using the button below</p></div>
-      <div class="step"><div class="step-num">2</div><p><strong>Open the downloaded file</strong> in your browser</p></div>
-      <div class="step"><div class="step-num">3</div><p>Press <strong>Ctrl+A</strong> then <strong>Ctrl+C</strong> to copy</p></div>
-      <div class="step"><div class="step-num">4</div><p><strong>Paste into Gmail</strong> with Ctrl+V</p></div>
+      <div class="step"><div class="step-num">1</div><p>Click <strong>Copy card</strong> below</p></div>
+      <div class="step"><div class="step-num">2</div><p><strong>Paste into Gmail</strong> with Ctrl+V</p></div>
     </div>
     <div class="btn-row">
-      <button class="primary" onclick="downloadCard()">Download card HTML</button>
+      <button class="primary" onclick="copyCard()">Copy card</button>
+      <button onclick="downloadCard()">Download HTML instead</button>
     </div>
   </div>
 </div>
@@ -180,7 +179,7 @@
     document.getElementById('previewWrap').style.display = 'block';
   }
 
-  function downloadCard() {
+  function buildCardInner() {
     const url = document.getElementById('fUrl').value.trim();
     const title = esc(document.getElementById('fTitle').value.trim());
     const image = document.getElementById('fImage').value.trim();
@@ -189,19 +188,44 @@
     const imgHtml = image
       ? `<img src="${esc(image)}" alt="" style="display:block;width:100%;height:190px;object-fit:cover;" />`
       : `<div style="width:100%;height:190px;background:#e8e5de;display:flex;align-items:center;justify-content:center;font-size:40px;">&#128279;</div>`;
+    return `<a href="${esc(href)}" style="display:inline-block;text-decoration:none;border:1px solid #d1cfc8;border-radius:14px;overflow:hidden;max-width:360px;background:#fff;">
+  ${imgHtml}
+  <div style="padding:10px 12px 12px;">
+    <div style="font-size:11px;color:#999;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px;font-family:Arial,sans-serif;">${domain}</div>
+    <div style="font-size:14px;font-weight:600;color:#1a1a1a;line-height:1.3;font-family:Arial,sans-serif;">${title}</div>
+  </div>
+</a>`;
+  }
+
+  async function copyCard() {
+    const title = document.getElementById('fTitle').value.trim();
+    if (!title) { toast('Please enter at least a title.'); return; }
+    const url = document.getElementById('fUrl').value.trim();
+    const html = buildCardInner();
+    const plain = `${title} - ${normalizeUrl(url)}`;
+    try {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([plain], { type: 'text/plain' })
+        })
+      ]);
+      toast('Copied! Paste into Gmail with Ctrl+V.');
+    } catch (e) {
+      toast('Clipboard blocked - try Download HTML instead.');
+    }
+  }
+
+  function downloadCard() {
+    const title = document.getElementById('fTitle').value.trim();
+    if (!title) { toast('Please enter at least a title.'); return; }
     const html = `<!DOCTYPE html>
 <html>
 <head><meta charset="UTF-8"><title>Card</title>
 <style>body{margin:0;padding:20px;background:#fff;font-family:Arial,sans-serif;}</style>
 </head>
 <body>
-<a href="${esc(href)}" style="display:inline-block;text-decoration:none;border:1px solid #d1cfc8;border-radius:14px;overflow:hidden;max-width:360px;background:#fff;">
-  ${imgHtml}
-  <div style="padding:10px 12px 12px;">
-    <div style="font-size:11px;color:#999;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px;font-family:Arial,sans-serif;">${domain}</div>
-    <div style="font-size:14px;font-weight:600;color:#1a1a1a;line-height:1.3;font-family:Arial,sans-serif;">${title}</div>
-  </div>
-</a>
+${buildCardInner()}
 </body></html>`;
     const blob = new Blob([html], { type: 'text/html' });
     const a = document.createElement('a');
