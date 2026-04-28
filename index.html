@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Gmail Rich Link Generator</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Georgia, serif; background: #f5f3ee; min-height: 100vh; padding: 40px 20px; color: #1a1a1a; }
+  h1 { font-size: 22px; font-weight: normal; margin-bottom: 4px; }
+  .sub { font-size: 13px; color: #888; margin-bottom: 32px; font-family: monospace; }
+  .container { max-width: 620px; margin: 0 auto; }
+  .form-card { background: #fff; border: 1px solid #e0ddd6; border-radius: 12px; padding: 24px; margin-bottom: 24px; }
+  .field { margin-bottom: 16px; }
+  label { display: block; font-size: 12px; letter-spacing: 0.5px; text-transform: uppercase; color: #999; margin-bottom: 6px; font-family: monospace; }
+  input[type=text] { width: 100%; border: 1px solid #ddd; border-radius: 8px; padding: 10px 12px; font-size: 14px; font-family: inherit; background: #fafaf8; color: #1a1a1a; outline: none; transition: border-color 0.15s; }
+  input[type=text]:focus { border-color: #aaa; background: #fff; }
+  .url-row { display: flex; gap: 8px; margin-bottom: 20px; }
+  .url-row input { flex: 1; }
+  .btn-row { display: flex; gap: 10px; flex-wrap: wrap; }
+  button { padding: 10px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; border: 1px solid #ddd; background: #fff; color: #333; font-family: monospace; transition: background 0.15s; }
+  button:hover { background: #f5f3ee; border-color: #bbb; }
+  button.primary { background: #1a1a1a; color: #fff; border-color: #1a1a1a; }
+  button.primary:hover { background: #333; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  .preview-label { font-size: 12px; font-family: monospace; letter-spacing: 0.5px; text-transform: uppercase; color: #999; margin-bottom: 10px; }
+  #previewWrap { display: none; }
+  .rich-card { border: 1px solid #d1cfc8; border-radius: 14px; overflow: hidden; max-width: 360px; background: #fff; margin-bottom: 24px; }
+  .rich-card-img { width: 100%; height: 190px; object-fit: cover; display: block; }
+  .rich-card-img-placeholder { width: 100%; height: 190px; background: #e8e5de; display: flex; align-items: center; justify-content: center; font-size: 40px; }
+  .rich-card-body { padding: 10px 12px 12px; font-family: Arial, sans-serif; }
+  .rich-card-domain { font-size: 11px; color: #999; text-transform: uppercase; letter-spacing: 0.4px; margin-bottom: 3px; }
+  .rich-card-title { font-size: 14px; font-weight: 600; color: #1a1a1a; line-height: 1.3; }
+  .instructions { background: #fff; border: 1px solid #e0ddd6; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; }
+  .step { display: flex; gap: 10px; align-items: baseline; margin-bottom: 8px; }
+  .step-num { font-size: 11px; font-family: monospace; background: #1a1a1a; color: #fff; border-radius: 50%; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; position: relative; top: 1px; }
+  .step p { font-size: 13px; color: #555; line-height: 1.7; font-family: Arial, sans-serif; }
+  .step strong { color: #1a1a1a; }
+  .spinner { display: none; font-size: 13px; color: #888; font-family: monospace; margin-top: 8px; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1a1a1a; color: #fff; padding: 10px 20px; border-radius: 8px; font-size: 13px; font-family: monospace; opacity: 0; transition: opacity 0.2s; pointer-events: none; z-index: 999; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Gmail rich link generator</h1>
+  <p class="sub">paste URL to auto-fill &rarr; edit &rarr; download &rarr; open &rarr; copy &rarr; paste into Gmail</p>
+
+  <div class="form-card">
+    <div class="field">
+      <label>URL &mdash; paste and press Enter or click Fetch</label>
+      <div class="url-row">
+        <input type="text" id="fUrl" placeholder="https://example.com/page" onkeydown="if(event.key==='Enter') fetchMeta()" />
+        <button class="primary" id="fetchBtn" onclick="fetchMeta()">Fetch &#8599;</button>
+      </div>
+    </div>
+    <div id="spinner" class="spinner">Fetching metadata&hellip;</div>
+    <div class="field">
+      <label>Title</label>
+      <input type="text" id="fTitle" placeholder="Page title" />
+    </div>
+    <div class="field">
+      <label>Thumbnail image URL</label>
+      <input type="text" id="fImage" placeholder="https://example.com/thumbnail.jpg" />
+    </div>
+    <div class="field">
+      <label>Domain label</label>
+      <input type="text" id="fDomain" placeholder="example.com" />
+    </div>
+    <div class="btn-row">
+      <button class="primary" onclick="preview()">Preview card</button>
+      <button onclick="clearForm()">Clear</button>
+    </div>
+  </div>
+
+  <div id="previewWrap">
+    <p class="preview-label">Preview</p>
+    <div class="rich-card">
+      <div id="cardImgWrap"></div>
+      <div class="rich-card-body">
+        <div class="rich-card-domain" id="prevDomain"></div>
+        <div class="rich-card-title" id="prevTitle"></div>
+      </div>
+    </div>
+    <div class="instructions">
+      <div class="step"><div class="step-num">1</div><p><strong>Download the card</strong> using the button below</p></div>
+      <div class="step"><div class="step-num">2</div><p><strong>Open the downloaded file</strong> in your browser</p></div>
+      <div class="step"><div class="step-num">3</div><p>Press <strong>Ctrl+A</strong> then <strong>Ctrl+C</strong> to copy</p></div>
+      <div class="step"><div class="step-num">4</div><p><strong>Paste into Gmail</strong> with Ctrl+V</p></div>
+    </div>
+    <div class="btn-row">
+      <button class="primary" onclick="downloadCard()">Download card HTML</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // Public CORS proxies, tried in order. If one rate-limits or 5xxs, fall through to the next.
+  const PROXIES = [
+    u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+    u => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    u => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+  ];
+
+  function esc(s) {
+    return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function tryHostname(url) {
+    try { return new URL(url.startsWith('http') ? url : 'https://'+url).hostname; } catch { return ''; }
+  }
+  function normalizeUrl(url) {
+    return url.startsWith('http') ? url : 'https://' + url;
+  }
+  function absolutize(maybeRel, base) {
+    if (!maybeRel) return '';
+    try { return new URL(maybeRel, base).href; } catch { return maybeRel; }
+  }
+
+  async function fetchHtmlViaProxy(url) {
+    let lastErr;
+    for (const make of PROXIES) {
+      try {
+        const r = await fetch(make(url));
+        if (!r.ok) { lastErr = new Error(`HTTP ${r.status}`); continue; }
+        return await r.text();
+      } catch (e) { lastErr = e; }
+    }
+    throw lastErr || new Error('All proxies failed');
+  }
+
+  function extractMeta(html, sourceUrl) {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const get = (prop) =>
+      doc.querySelector(`meta[property="${prop}"]`)?.getAttribute('content') ||
+      doc.querySelector(`meta[name="${prop}"]`)?.getAttribute('content') || '';
+    const title = get('og:title') || (doc.querySelector('title')?.textContent || '').trim();
+    const description = get('og:description') || get('description');
+    const image = absolutize(get('og:image'), sourceUrl);
+    const siteName = get('og:site_name');
+    let domain = '';
+    try { domain = new URL(sourceUrl).hostname; } catch {}
+    return { title, description, image, siteName, domain };
+  }
+
+  async function fetchMeta() {
+    const raw = document.getElementById('fUrl').value.trim();
+    if (!raw) return;
+    const url = normalizeUrl(raw);
+    document.getElementById('spinner').style.display = 'block';
+    document.getElementById('fetchBtn').disabled = true;
+    try {
+      const html = await fetchHtmlViaProxy(url);
+      const data = extractMeta(html, url);
+      document.getElementById('fTitle').value = data.title || '';
+      document.getElementById('fImage').value = data.image || '';
+      document.getElementById('fDomain').value = data.siteName || data.domain || tryHostname(url);
+      toast('Metadata fetched - edit if needed, then preview.');
+    } catch(e) {
+      toast('Could not fetch metadata: ' + e.message);
+    } finally {
+      document.getElementById('spinner').style.display = 'none';
+      document.getElementById('fetchBtn').disabled = false;
+    }
+  }
+
+  function preview() {
+    const title = document.getElementById('fTitle').value.trim();
+    const image = document.getElementById('fImage').value.trim();
+    const url = document.getElementById('fUrl').value.trim();
+    const domain = document.getElementById('fDomain').value.trim() || tryHostname(url);
+    if (!title) { toast('Please enter at least a title.'); return; }
+    const imgWrap = document.getElementById('cardImgWrap');
+    imgWrap.innerHTML = image
+      ? `<img class="rich-card-img" src="${esc(image)}" alt="" onerror="this.outerHTML='<div class=rich-card-img-placeholder>&#128279;</div>'" />`
+      : `<div class="rich-card-img-placeholder">&#128279;</div>`;
+    document.getElementById('prevTitle').textContent = title;
+    document.getElementById('prevDomain').textContent = domain.toUpperCase();
+    document.getElementById('previewWrap').style.display = 'block';
+  }
+
+  function downloadCard() {
+    const url = document.getElementById('fUrl').value.trim();
+    const title = esc(document.getElementById('fTitle').value.trim());
+    const image = document.getElementById('fImage').value.trim();
+    const domain = esc((document.getElementById('fDomain').value.trim() || tryHostname(url)).toUpperCase());
+    const href = normalizeUrl(url);
+    const imgHtml = image
+      ? `<img src="${esc(image)}" alt="" style="display:block;width:100%;height:190px;object-fit:cover;" />`
+      : `<div style="width:100%;height:190px;background:#e8e5de;display:flex;align-items:center;justify-content:center;font-size:40px;">&#128279;</div>`;
+    const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><title>Card</title>
+<style>body{margin:0;padding:20px;background:#fff;font-family:Arial,sans-serif;}</style>
+</head>
+<body>
+<a href="${esc(href)}" style="display:inline-block;text-decoration:none;border:1px solid #d1cfc8;border-radius:14px;overflow:hidden;max-width:360px;background:#fff;">
+  ${imgHtml}
+  <div style="padding:10px 12px 12px;">
+    <div style="font-size:11px;color:#999;text-transform:uppercase;letter-spacing:0.4px;margin-bottom:3px;font-family:Arial,sans-serif;">${domain}</div>
+    <div style="font-size:14px;font-weight:600;color:#1a1a1a;line-height:1.3;font-family:Arial,sans-serif;">${title}</div>
+  </div>
+</a>
+</body></html>`;
+    const blob = new Blob([html], { type: 'text/html' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'gmail-card.html';
+    a.click();
+    toast('Downloaded! Open in browser, Ctrl+A, Ctrl+C, paste into Gmail.');
+  }
+
+  function clearForm() {
+    ['fUrl','fTitle','fImage','fDomain'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('previewWrap').style.display = 'none';
+  }
+
+  function toast(msg) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 3500);
+  }
+</script>
+</body>
+</html>
